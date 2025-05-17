@@ -1,0 +1,54 @@
+name: Build, Push Docker, and Update Lambda
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  update-lambda:
+    runs-on: ubuntu-latest
+
+    env:
+      LAMBDA_FUNCTION_NAME: "my-container-lambda"           # Update with your Lambda function name
+      ECR_REPOSITORY: "my-lambda-container"                # Your ECR repository name
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Set image tag (Git SHA)
+        run: echo "IMAGE_TAG=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
+
+      - name: Tag Docker image with ECR URI
+        run: |
+          IMAGE_URI="${{ steps.ecr-login.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG"
+          docker tag $ECR_REPOSITORY:$IMAGE_TAG $IMAGE_URI
+          echo "IMAGE_URI=$IMAGE_URI" >> $GITHUB_ENV
+
+      - name: Push Docker image to ECR
+        run: docker push $IMAGE_URI
+
+      - name: Update Lambda function image
+        run: |
+          aws lambda update-function-code \
+            --function-name $LAMBDA_FUNCTION_NAME \
+            --image-uri $IMAGE_URI
+
+      - name: Verify Lambda function update
+        run: aws lambda get-function --function-name $LAMBDA_FUNCTION_NAME
