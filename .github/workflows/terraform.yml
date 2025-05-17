@@ -1,0 +1,54 @@
+name: Terraform Workflow
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Lint, Plan, Apply
+    runs-on: ubuntu-latest
+
+    env:
+      TF_ROOT: ./   # Terraform working directory if not root adjust here
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.7
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init
+
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform validate
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform plan -out=tfplan
+
+      - name: Upload Terraform plan artifact
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v3
+        with:
+          name: terraform-plan
+          path: ${{ env.TF_ROOT }}/tfplan
+
+      - name: Terraform Apply
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform apply -auto-approve tfplan
